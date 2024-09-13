@@ -186,7 +186,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_comparison();
         while self.current_token == Token::Equal || self.current_token == Token::NotEqual {
             let op = self.current_token.clone();
-            self.next_token(); // Consume operator
+            self.next_token();
             let right = self.parse_comparison();
             expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
         }
@@ -201,7 +201,7 @@ impl<'a> Parser<'a> {
             || self.current_token == Token::LessEqual
         {
             let op = self.current_token.clone();
-            self.next_token(); // Consume operator
+            self.next_token();
             let right = self.parse_term();
             expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
         }
@@ -212,7 +212,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_factor();
         while self.current_token == Token::Plus || self.current_token == Token::Minus {
             let op = self.current_token.clone();
-            self.next_token(); // Consume operator
+            self.next_token();
             let right = self.parse_factor();
             expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
         }
@@ -223,7 +223,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_unary();
         while self.current_token == Token::Asterisk || self.current_token == Token::Slash {
             let op = self.current_token.clone();
-            self.next_token(); // Consume operator
+            self.next_token();
             let right = self.parse_unary();
             expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
         }
