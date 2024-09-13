@@ -1,6 +1,9 @@
+use anyhow::{anyhow, Context};
+use clap::Parser as _;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::iter::Peekable;
+use std::path::PathBuf;
 use std::str::Chars;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -133,7 +136,7 @@ impl<'a> Lexer<'a> {
                 ch if ch.is_ascii_digit() => {
                     let mut number = ch.to_string();
                     while let Some(&next_ch) = self.input.peek() {
-                        if next_ch.is_ascii_digit() {
+                        if next_ch.is_ascii_digit() || next_ch == '.' {
                             number.push(self.input.next().unwrap());
                         } else {
                             break;
@@ -476,26 +479,33 @@ impl Interpreter {
         }
     }
 
-    fn interpret(&mut self, statements: Vec<Stmt>) {
+    fn interpret(&mut self, statements: Vec<Stmt>) -> anyhow::Result<()> {
         for stmt in statements {
-            self.execute_statement(stmt);
+            self.execute_statement(stmt)
+                .context("Error executing statement")?;
         }
+        Ok(())
     }
 
-    fn execute_statement(&mut self, stmt: Stmt) -> Option<Value> {
+    fn execute_statement(&mut self, stmt: Stmt) -> anyhow::Result<Option<Value>> {
         match stmt {
             Stmt::Variable(name, expr) => {
-                let value = self.evaluate_expression(expr);
+                let value = self
+                    .evaluate_expression(expr)
+                    .context("Invalid expression")?;
                 self.variables.insert(name, value);
-                None
+
+                Ok(None)
             }
-            Stmt::Expression(expr) => {
-                self.evaluate_expression(expr);
-                None
-            }
+            Stmt::Expression(expr) => self
+                .evaluate_expression(expr)
+                .context("Invalid expression")
+                .map(Some),
             Stmt::Return(expr) => {
-                let value = self.evaluate_expression(expr);
-                Some(value)
+                let value = self
+                    .evaluate_expression(expr)
+                    .context("Invalid expression")?;
+                Ok(Some(value))
             }
             Stmt::If {
                 condition,
@@ -504,78 +514,85 @@ impl Interpreter {
             } => {
                 let cond_value = self.evaluate_expression(condition);
                 match cond_value {
-                    Value::Number(1.0) => {
+                    Ok(Value::Bool(true)) => {
                         for stmt in then_branch {
-                            if let Some(ret_val) = self.execute_statement(stmt) {
-                                return Some(ret_val);
+                            if let Ok(Some(ret_val)) = self.execute_statement(stmt) {
+                                return Ok(Some(ret_val));
                             }
                         }
                     }
                     _ => {
                         if let Some(else_stmts) = else_branch {
                             for stmt in else_stmts {
-                                if let Some(ret_val) = self.execute_statement(stmt) {
-                                    return Some(ret_val);
+                                if let Ok(Some(ret_val)) = self.execute_statement(stmt) {
+                                    return Ok(Some(ret_val));
                                 }
                             }
                         }
                     }
                 };
-                None
+                Ok(None)
             }
             Stmt::Function { name, params, body } => {
                 self.functions.insert(name, (params, body));
-                None
+                Ok(None)
             }
         }
     }
 
-    fn evaluate_expression(&mut self, expr: Expr) -> Value {
+    fn evaluate_expression(&mut self, expr: Expr) -> anyhow::Result<Value> {
         match expr {
-            Expr::Number(value) => Value::Number(value),
-            Expr::String(value) => Value::String(value),
-            Expr::Bool(value) => Value::Bool(value),
+            Expr::Number(value) => Ok(Value::Number(value)),
+            Expr::String(value) => Ok(Value::String(value)),
+            Expr::Bool(value) => Ok(Value::Bool(value)),
             Expr::Identifier(name) => self
                 .variables
                 .get(&name)
                 .cloned()
-                .expect("Invalid identifier"),
+                .context("Invalid identifier"),
             Expr::BinaryOp(left, op, right) => {
-                let left_val = self.evaluate_expression(*left);
-                let right_val = self.evaluate_expression(*right);
+                let left_val = self
+                    .evaluate_expression(*left)
+                    .context("Invalid left operand")?;
+                let right_val = self
+                    .evaluate_expression(*right)
+                    .context("Invalid right operand")?;
+
                 match (left_val, right_val) {
                     (Value::Number(l), Value::Number(r)) => match op {
-                        Token::Plus => Value::Number(l + r),
-                        Token::Minus => Value::Number(l - r),
-                        Token::Asterisk => Value::Number(l * r),
-                        Token::Slash => Value::Number(l / r),
-                        Token::Greater => Value::Bool(l > r),
-                        Token::Less => Value::Bool(l < r),
-                        Token::Equal => Value::Bool(l == r),
-                        Token::NotEqual => Value::Bool(l != r),
-                        Token::GreaterEqual => Value::Bool(l >= r),
-                        Token::LessEqual => Value::Bool(l <= r),
-                        _ => Value::Bool(false),
+                        Token::Plus => Ok(Value::Number(l + r)),
+                        Token::Minus => Ok(Value::Number(l - r)),
+                        Token::Asterisk => Ok(Value::Number(l * r)),
+                        Token::Slash => Ok(Value::Number(l / r)),
+                        Token::Greater => Ok(Value::Bool(l > r)),
+                        Token::Less => Ok(Value::Bool(l < r)),
+                        Token::Equal => Ok(Value::Bool(l == r)),
+                        Token::NotEqual => Ok(Value::Bool(l != r)),
+                        Token::GreaterEqual => Ok(Value::Bool(l >= r)),
+                        Token::LessEqual => Ok(Value::Bool(l <= r)),
+                        _ => Err(anyhow!("Unsupported operator for numbers")),
                     },
                     (Value::String(l), Value::String(r)) => {
                         if let Token::Plus = op {
-                            Value::String(l + &r)
+                            Ok(Value::String(l + &r))
                         } else {
-                            panic!("Unsupported operation on strings")
+                            Err(anyhow!("Unsupported operation on strings"))
                         }
                     }
                     (Value::Bool(l), Value::Bool(r)) => match op {
-                        Token::Equal => Value::Bool(l == r),
-                        Token::NotEqual => Value::Bool(l != r),
-                        _ => Value::Bool(false),
+                        Token::Equal => Ok(Value::Bool(l == r)),
+                        Token::NotEqual => Ok(Value::Bool(l != r)),
+                        _ => Err(anyhow!("Unsupported operator for booleans")),
                     },
-                    _ => panic!("Type mismatch in binary operation"),
+                    _ => Err(anyhow!("Type mismatch in binary operation")),
                 }
             }
             Expr::Call(name, args) => {
                 if name == "print" {
                     for (i, arg) in args.iter().enumerate() {
-                        let val = self.evaluate_expression(arg.clone());
+                        let val = self
+                            .evaluate_expression(arg.clone())
+                            .context("Invalid argument")?;
                         print!("{val}");
 
                         if i == args.len() - 1 {
@@ -584,48 +601,59 @@ impl Interpreter {
                             print!(" ");
                         }
                     }
-                    Value::Number(0.0)
+                    Ok(Value::Number(0.0))
                 } else if let Some((params, body)) = self.functions.get(&name).cloned() {
                     // Save current state
                     let saved_vars = self.variables.clone();
                     // Map arguments to parameters
                     for (param, arg) in params.iter().zip(args.iter()) {
-                        let arg_val = self.evaluate_expression(arg.clone());
+                        let arg_val = self
+                            .evaluate_expression(arg.clone())
+                            .context("Invalid argument")?;
                         self.variables.insert(param.clone(), arg_val);
                     }
                     // Execute function body
                     let mut return_value: Option<Value> = None;
                     for stmt in body {
-                        if let Some(ret_val) = self.execute_statement(stmt.clone()) {
+                        if let Ok(Some(ret_val)) = self.execute_statement(stmt.clone()) {
                             return_value = Some(ret_val);
                             break;
                         }
                     }
                     // Restore state
                     self.variables = saved_vars;
-                    return_value.unwrap()
+                    return_value.context("No return value")
                 } else {
-                    panic!("Undefined function: {}", name);
+                    Err(anyhow!("Bad call"))
                 }
             }
         }
     }
 }
 
-fn main() {
-    let source_code = r#"
-    let x = 10;
-    let y = 20;
+#[derive(clap::Parser)]
+struct Cli {
+    #[arg()]
+    source: PathBuf,
 
-    print(x / y);
-    "#;
+    #[arg(short, long)]
+    ast: bool,
+}
 
-    let lexer = Lexer::new(source_code);
+fn main() -> anyhow::Result<()> {
+    let args = Cli::parse();
+    let source_code = std::fs::read_to_string(args.source).context("Error reading file")?;
+
+    let lexer = Lexer::new(source_code.as_str());
     let mut parser = Parser::new(lexer);
     let program = parser.parse_program();
 
-    dbg!(&program);
+    if args.ast {
+        println!("{:#?}", program);
+    }
 
     let mut interpreter = Interpreter::new();
-    interpreter.interpret(program);
+    interpreter
+        .interpret(program)
+        .context("Error interpreting program")
 }
