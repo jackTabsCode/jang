@@ -10,11 +10,10 @@ enum Token {
     If,
     Else,
     Return,
-
     Identifier(String),
     Number(i64),
     StringLiteral(String),
-
+    Bool(bool),
     Plus,
     Minus,
     Asterisk,
@@ -26,14 +25,12 @@ enum Token {
     Less,
     GreaterEqual,
     LessEqual,
-
     LParen,
     RParen,
     LBrace,
     RBrace,
     Comma,
     Semicolon,
-
     Eof,
 }
 
@@ -113,7 +110,6 @@ impl<'a> Lexer<'a> {
                     }
                     Token::StringLiteral(str)
                 }
-
                 ch if ch.is_alphabetic() => {
                     let mut ident = ch.to_string();
                     while let Some(&next_ch) = self.input.peek() {
@@ -129,6 +125,8 @@ impl<'a> Lexer<'a> {
                         "if" => Token::If,
                         "else" => Token::Else,
                         "return" => Token::Return,
+                        "true" => Token::Bool(true),
+                        "false" => Token::Bool(false),
                         _ => Token::Identifier(ident),
                     }
                 }
@@ -155,6 +153,7 @@ impl<'a> Lexer<'a> {
 enum Expr {
     Number(i64),
     String(String),
+    Bool(bool),
     Identifier(String),
     BinaryOp(Box<Expr>, Token, Box<Expr>),
     Call(String, Vec<Expr>),
@@ -162,7 +161,7 @@ enum Expr {
 
 #[derive(Debug, Clone)]
 enum Stmt {
-    Let(String, Expr),
+    Variable(String, Expr),
     Expression(Expr),
     Return(Expr),
     If {
@@ -226,7 +225,7 @@ impl<'a> Parser<'a> {
                 let expr = self.parse_expression();
                 if self.current_token == Token::Semicolon {
                     self.next_token();
-                    return Some(Stmt::Let(name, expr));
+                    return Some(Stmt::Variable(name, expr));
                 }
             }
         }
@@ -257,8 +256,6 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 if self.current_token == Token::Comma {
                     self.next_token();
-                } else if self.current_token == Token::RParen {
-                    break;
                 } else {
                     break;
                 }
@@ -280,7 +277,6 @@ impl<'a> Parser<'a> {
                 }
             }
             self.next_token();
-        } else {
         }
         statements
     }
@@ -339,7 +335,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_comparison();
         while self.current_token == Token::Equal || self.current_token == Token::NotEqual {
             let op = self.current_token.clone();
-            self.next_token();
+            self.next_token(); // Consume operator
             let right = self.parse_comparison();
             expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
         }
@@ -354,7 +350,7 @@ impl<'a> Parser<'a> {
             || self.current_token == Token::LessEqual
         {
             let op = self.current_token.clone();
-            self.next_token();
+            self.next_token(); // Consume operator
             let right = self.parse_term();
             expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
         }
@@ -365,7 +361,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_factor();
         while self.current_token == Token::Plus || self.current_token == Token::Minus {
             let op = self.current_token.clone();
-            self.next_token();
+            self.next_token(); // Consume operator
             let right = self.parse_factor();
             expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
         }
@@ -376,7 +372,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_unary();
         while self.current_token == Token::Asterisk || self.current_token == Token::Slash {
             let op = self.current_token.clone();
-            self.next_token();
+            self.next_token(); // Consume operator
             let right = self.parse_unary();
             expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
         }
@@ -388,7 +384,6 @@ impl<'a> Parser<'a> {
             let op = self.current_token.clone();
             self.next_token();
             let right = self.parse_unary();
-
             Expr::BinaryOp(Box::new(Expr::Number(0)), op, Box::new(right))
         } else {
             self.parse_primary()
@@ -416,13 +411,16 @@ impl<'a> Parser<'a> {
                 let expr = self.parse_expression();
                 if self.current_token == Token::RParen {
                     self.next_token();
-                } else {
                 }
                 expr
             }
             Token::StringLiteral(value) => {
                 self.next_token();
                 Expr::String(value)
+            }
+            Token::Bool(value) => {
+                self.next_token();
+                Expr::Bool(value)
             }
             _ => Expr::Number(0),
         }
@@ -443,7 +441,6 @@ impl<'a> Parser<'a> {
         }
         if self.current_token == Token::RParen {
             self.next_token();
-        } else {
         }
         args
     }
@@ -453,6 +450,7 @@ impl<'a> Parser<'a> {
 enum Value {
     Number(i64),
     String(String),
+    Bool(bool),
 }
 
 impl Display for Value {
@@ -460,6 +458,7 @@ impl Display for Value {
         match self {
             Value::Number(n) => write!(f, "{}", n),
             Value::String(s) => write!(f, "{}", s),
+            Value::Bool(b) => write!(f, "{}", b),
         }
     }
 }
@@ -485,7 +484,7 @@ impl Interpreter {
 
     fn execute_statement(&mut self, stmt: Stmt) -> Option<Value> {
         match stmt {
-            Stmt::Let(name, expr) => {
+            Stmt::Variable(name, expr) => {
                 let value = self.evaluate_expression(expr);
                 self.variables.insert(name, value);
                 None
@@ -535,6 +534,7 @@ impl Interpreter {
         match expr {
             Expr::Number(value) => Value::Number(value),
             Expr::String(value) => Value::String(value),
+            Expr::Bool(value) => Value::Bool(value),
             Expr::Identifier(name) => self
                 .variables
                 .get(&name)
@@ -544,22 +544,19 @@ impl Interpreter {
                 let left_val = self.evaluate_expression(*left);
                 let right_val = self.evaluate_expression(*right);
                 match (left_val, right_val) {
-                    (Value::Number(l), Value::Number(r)) => {
-                        let result = match op {
-                            Token::Plus => l + r,
-                            Token::Minus => l - r,
-                            Token::Asterisk => l * r,
-                            Token::Slash => l / r,
-                            Token::Greater => (l > r) as i64,
-                            Token::Less => (l < r) as i64,
-                            Token::Equal => (l == r) as i64,
-                            Token::NotEqual => (l != r) as i64,
-                            Token::GreaterEqual => (l >= r) as i64,
-                            Token::LessEqual => (l <= r) as i64,
-                            _ => 0,
-                        };
-                        Value::Number(result)
-                    }
+                    (Value::Number(l), Value::Number(r)) => match op {
+                        Token::Plus => Value::Number(l + r),
+                        Token::Minus => Value::Number(l - r),
+                        Token::Asterisk => Value::Number(l * r),
+                        Token::Slash => Value::Number(l / r),
+                        Token::Greater => Value::Bool(l > r),
+                        Token::Less => Value::Bool(l < r),
+                        Token::Equal => Value::Bool(l == r),
+                        Token::NotEqual => Value::Bool(l != r),
+                        Token::GreaterEqual => Value::Bool(l >= r),
+                        Token::LessEqual => Value::Bool(l <= r),
+                        _ => Value::Bool(false),
+                    },
                     (Value::String(l), Value::String(r)) => {
                         if let Token::Plus = op {
                             Value::String(l + &r)
@@ -567,6 +564,11 @@ impl Interpreter {
                             panic!("Unsupported operation on strings")
                         }
                     }
+                    (Value::Bool(l), Value::Bool(r)) => match op {
+                        Token::Equal => Value::Bool(l == r),
+                        Token::NotEqual => Value::Bool(l != r),
+                        _ => Value::Bool(false),
+                    },
                     _ => panic!("Type mismatch in binary operation"),
                 }
             }
@@ -584,13 +586,14 @@ impl Interpreter {
                     }
                     Value::Number(0)
                 } else if let Some((params, body)) = self.functions.get(&name).cloned() {
+                    // Save current state
                     let saved_vars = self.variables.clone();
-
+                    // Map arguments to parameters
                     for (param, arg) in params.iter().zip(args.iter()) {
                         let arg_val = self.evaluate_expression(arg.clone());
                         self.variables.insert(param.clone(), arg_val);
                     }
-
+                    // Execute function body
                     let mut return_value: Option<Value> = None;
                     for stmt in body {
                         if let Some(ret_val) = self.execute_statement(stmt.clone()) {
@@ -598,7 +601,7 @@ impl Interpreter {
                             break;
                         }
                     }
-
+                    // Restore state
                     self.variables = saved_vars;
                     return_value.unwrap()
                 } else {
@@ -614,23 +617,14 @@ fn main() {
     let x = 10;
     let y = 20;
 
-    fn add(a, b) {
-        return a + b;
-    }
-
-    let result = add(x, y);
-
-    if result > 20 {
-        print(result);
-    }
-
-    print("Hello", "There");
-    print("Something");
+    print(x * y == 200 == false);
     "#;
 
     let lexer = Lexer::new(source_code);
     let mut parser = Parser::new(lexer);
     let program = parser.parse_program();
+
+    dbg!(&program);
 
     let mut interpreter = Interpreter::new();
     interpreter.interpret(program);
