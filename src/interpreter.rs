@@ -11,6 +11,7 @@ enum Value {
     Number(f64),
     String(String),
     Bool(bool),
+    Void,
 }
 
 impl Display for Value {
@@ -19,6 +20,7 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", n),
             Value::String(s) => write!(f, "{}", s),
             Value::Bool(b) => write!(f, "{}", b),
+            Value::Void => write!(f, "void"),
         }
     }
 }
@@ -50,6 +52,24 @@ impl Interpreter {
                 let value = self
                     .evaluate_expression(expr)
                     .context("Invalid expression")?;
+
+                if self.variables.contains_key(&name) {
+                    return Err(anyhow!("Variable already defined"));
+                }
+
+                self.variables.insert(name, value);
+
+                Ok(None)
+            }
+            Stmt::Assignment(name, expr) => {
+                let value = self
+                    .evaluate_expression(expr)
+                    .context("Invalid expression")?;
+
+                if !self.variables.contains_key(&name) {
+                    return Err(anyhow!("Variable not defined"));
+                }
+
                 self.variables.insert(name, value);
 
                 Ok(None)
@@ -158,7 +178,8 @@ impl Interpreter {
                             print!(" ");
                         }
                     }
-                    Ok(Value::Number(0.0))
+
+                    Ok(Value::Void)
                 } else if let Some((params, body)) = self.functions.get(&name).cloned() {
                     // Save current state
                     let saved_vars = self.variables.clone();
@@ -172,14 +193,23 @@ impl Interpreter {
                     // Execute function body
                     let mut return_value: Option<Value> = None;
                     for stmt in body {
-                        if let Ok(Some(ret_val)) = self.execute_statement(stmt.clone()) {
-                            return_value = Some(ret_val);
-                            break;
+                        if let Stmt::Return(expr) = stmt {
+                            match self.evaluate_expression(expr) {
+                                Ok(value) => {
+                                    return_value = Some(value);
+                                    break;
+                                }
+                                Err(err) => return Err(err),
+                            }
+                        } else {
+                            self.execute_statement(stmt)
+                                .context("Error executing statement")?;
                         }
                     }
                     // Restore state
                     self.variables = saved_vars;
-                    return_value.context("No return value")
+
+                    Ok(return_value.unwrap_or(Value::Void))
                 } else {
                     Err(anyhow!("Bad call"))
                 }

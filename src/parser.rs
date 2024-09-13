@@ -1,3 +1,5 @@
+use std::mem::replace;
+
 use crate::lexer::{Lexer, Token};
 
 #[derive(Debug, Clone)]
@@ -13,6 +15,7 @@ pub enum Expr {
 #[derive(Debug, Clone)]
 pub enum Stmt {
     Variable(String, Expr),
+    Assignment(String, Expr),
     Expression(Expr),
     Return(Expr),
     If {
@@ -30,14 +33,17 @@ pub enum Stmt {
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     current_token: Token,
+    peek_token: Token,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(mut lexer: Lexer<'a>) -> Self {
         let current_token = lexer.next_token();
+        let peek_token = lexer.next_token();
         Parser {
             lexer,
             current_token,
+            peek_token,
         }
     }
 
@@ -54,7 +60,7 @@ impl<'a> Parser<'a> {
     }
 
     fn next_token(&mut self) {
-        self.current_token = self.lexer.next_token();
+        self.current_token = replace(&mut self.peek_token, self.lexer.next_token());
     }
 
     fn parse_statement(&mut self) -> Option<Stmt> {
@@ -63,8 +69,30 @@ impl<'a> Parser<'a> {
             Token::Fn => self.parse_function(),
             Token::If => self.parse_if_statement(),
             Token::Return => self.parse_return_statement(),
+            Token::Identifier(_) => {
+                if self.peek_token == Token::Assign {
+                    self.parse_assignment_statement()
+                } else {
+                    self.parse_expression_statement()
+                }
+            }
             _ => self.parse_expression_statement(),
         }
+    }
+
+    fn parse_assignment_statement(&mut self) -> Option<Stmt> {
+        if let Token::Identifier(name) = self.current_token.clone() {
+            self.next_token();
+            if self.current_token == Token::Assign {
+                self.next_token();
+                let expr = self.parse_expression();
+                if self.current_token == Token::Semicolon {
+                    self.next_token();
+                    return Some(Stmt::Assignment(name, expr));
+                }
+            }
+        }
+        None
     }
 
     fn parse_let_statement(&mut self) -> Option<Stmt> {
