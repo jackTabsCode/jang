@@ -13,7 +13,6 @@ pub enum Expr {
 #[derive(Debug, Clone)]
 pub enum Stmt {
     Variable(String, Expr),
-    Assignment(String, Expr),
     Expression(Expr),
     Return(Expr),
     If {
@@ -64,7 +63,6 @@ impl<'a> Parser<'a> {
             Token::Fn => self.parse_function(),
             Token::If => self.parse_if_statement(),
             Token::Return => self.parse_return_statement(),
-            Token::Identifier(_) => self.parse_assignment_statement(),
             _ => self.parse_expression_statement(),
         }
     }
@@ -79,21 +77,6 @@ impl<'a> Parser<'a> {
                 if self.current_token == Token::Semicolon {
                     self.next_token();
                     return Some(Stmt::Variable(name, expr));
-                }
-            }
-        }
-        None
-    }
-
-    fn parse_assignment_statement(&mut self) -> Option<Stmt> {
-        if let Token::Identifier(name) = self.current_token.clone() {
-            self.next_token();
-            if self.current_token == Token::Assign {
-                self.next_token();
-                let expr = self.parse_expression();
-                if self.current_token == Token::Semicolon {
-                    self.next_token();
-                    return Some(Stmt::Assignment(name, expr));
                 }
             }
         }

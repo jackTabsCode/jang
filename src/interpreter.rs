@@ -50,19 +50,6 @@ impl Interpreter {
                 let value = self
                     .evaluate_expression(expr)
                     .context("Invalid expression")?;
-
-                if self.variables.contains_key(&name) {
-                    return Err(anyhow!("Variable already defined"));
-                }
-
-                self.variables.insert(name, value);
-
-                Ok(None)
-            }
-            Stmt::Assignment(name, expr) => {
-                let value = self
-                    .evaluate_expression(expr)
-                    .context("Invalid expression")?;
                 self.variables.insert(name, value);
 
                 Ok(None)
