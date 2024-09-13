@@ -11,7 +11,7 @@ enum Token {
     Else,
     Return,
     Identifier(String),
-    Number(i64),
+    Number(f64),
     StringLiteral(String),
     Bool(bool),
     Plus,
@@ -151,7 +151,7 @@ impl<'a> Lexer<'a> {
 
 #[derive(Debug, Clone)]
 enum Expr {
-    Number(i64),
+    Number(f64),
     String(String),
     Bool(bool),
     Identifier(String),
@@ -384,7 +384,7 @@ impl<'a> Parser<'a> {
             let op = self.current_token.clone();
             self.next_token();
             let right = self.parse_unary();
-            Expr::BinaryOp(Box::new(Expr::Number(0)), op, Box::new(right))
+            Expr::BinaryOp(Box::new(Expr::Number(0.0)), op, Box::new(right))
         } else {
             self.parse_primary()
         }
@@ -422,7 +422,7 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 Expr::Bool(value)
             }
-            _ => Expr::Number(0),
+            _ => Expr::Number(0.0),
         }
     }
 
@@ -448,7 +448,7 @@ impl<'a> Parser<'a> {
 
 #[derive(Debug, Clone)]
 enum Value {
-    Number(i64),
+    Number(f64),
     String(String),
     Bool(bool),
 }
@@ -504,7 +504,7 @@ impl Interpreter {
             } => {
                 let cond_value = self.evaluate_expression(condition);
                 match cond_value {
-                    Value::Number(1) => {
+                    Value::Number(1.0) => {
                         for stmt in then_branch {
                             if let Some(ret_val) = self.execute_statement(stmt) {
                                 return Some(ret_val);
@@ -584,7 +584,7 @@ impl Interpreter {
                             print!(" ");
                         }
                     }
-                    Value::Number(0)
+                    Value::Number(0.0)
                 } else if let Some((params, body)) = self.functions.get(&name).cloned() {
                     // Save current state
                     let saved_vars = self.variables.clone();
@@ -617,7 +617,7 @@ fn main() {
     let x = 10;
     let y = 20;
 
-    print(x * y == 200 == false);
+    print(x / y);
     "#;
 
     let lexer = Lexer::new(source_code);
