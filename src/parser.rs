@@ -249,7 +249,10 @@ impl<'a> Parser<'a> {
 
     fn parse_factor(&mut self) -> Expr {
         let mut expr = self.parse_unary();
-        while self.current_token == Token::Asterisk || self.current_token == Token::Slash {
+        while self.current_token == Token::Multiply
+            || self.current_token == Token::Divide
+            || self.current_token == Token::Modulo
+        {
             let op = self.current_token.clone();
             self.next_token();
             let right = self.parse_unary();

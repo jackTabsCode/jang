@@ -11,7 +11,7 @@ enum Value {
     Number(f64),
     String(String),
     Bool(bool),
-    Void,
+    Unit,
 }
 
 impl Display for Value {
@@ -20,7 +20,7 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", n),
             Value::String(s) => write!(f, "{}", s),
             Value::Bool(b) => write!(f, "{}", b),
-            Value::Void => write!(f, "void"),
+            Value::Unit => write!(f, "()"),
         }
     }
 }
@@ -139,8 +139,9 @@ impl Interpreter {
                     (Value::Number(l), Value::Number(r)) => match op {
                         Token::Plus => Ok(Value::Number(l + r)),
                         Token::Minus => Ok(Value::Number(l - r)),
-                        Token::Asterisk => Ok(Value::Number(l * r)),
-                        Token::Slash => Ok(Value::Number(l / r)),
+                        Token::Multiply => Ok(Value::Number(l * r)),
+                        Token::Divide => Ok(Value::Number(l / r)),
+                        Token::Modulo => Ok(Value::Number(l % r)),
                         Token::Greater => Ok(Value::Bool(l > r)),
                         Token::Less => Ok(Value::Bool(l < r)),
                         Token::Equal => Ok(Value::Bool(l == r)),
@@ -179,41 +180,40 @@ impl Interpreter {
                         }
                     }
 
-                    Ok(Value::Void)
+                    Ok(Value::Unit)
                 } else if let Some((params, body)) = self.functions.get(&name).cloned() {
-                    // Save current state
-                    let saved_vars = self.variables.clone();
-                    // Map arguments to parameters
-                    for (param, arg) in params.iter().zip(args.iter()) {
-                        let arg_val = self
-                            .evaluate_expression(arg.clone())
-                            .context("Invalid argument")?;
-                        self.variables.insert(param.clone(), arg_val);
-                    }
-                    // Execute function body
-                    let mut return_value: Option<Value> = None;
-                    for stmt in body {
-                        if let Stmt::Return(expr) = stmt {
-                            match self.evaluate_expression(expr) {
-                                Ok(value) => {
-                                    return_value = Some(value);
-                                    break;
-                                }
-                                Err(err) => return Err(err),
-                            }
-                        } else {
-                            self.execute_statement(stmt)
-                                .context("Error executing statement")?;
-                        }
-                    }
-                    // Restore state
-                    self.variables = saved_vars;
-
-                    Ok(return_value.unwrap_or(Value::Void))
+                    self.call_function(params, args, body)
                 } else {
-                    Err(anyhow!("Bad call"))
+                    Err(anyhow!("Function not defined"))
                 }
             }
         }
+    }
+
+    fn call_function(
+        &mut self,
+        params: Vec<String>,
+        args: Vec<Expr>,
+        body: Vec<Stmt>,
+    ) -> anyhow::Result<Value> {
+        let saved_vars = self.variables.clone();
+
+        for (param, arg) in params.iter().zip(args.iter()) {
+            let arg_val = self
+                .evaluate_expression(arg.clone())
+                .context("Invalid argument")?;
+            self.variables.insert(param.clone(), arg_val);
+        }
+
+        for stmt in body {
+            if let Some(value) = self.execute_statement(stmt)? {
+                self.variables = saved_vars;
+                return Ok(value);
+            }
+        }
+
+        self.variables = saved_vars;
+
+        Ok(Value::Unit)
     }
 }

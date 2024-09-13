@@ -13,8 +13,9 @@ pub enum Token {
     Bool(bool),
     Plus,
     Minus,
-    Asterisk,
-    Slash,
+    Multiply,
+    Divide,
+    Modulo,
     Assign,
     Equal,
     NotEqual,
@@ -55,8 +56,9 @@ impl<'a> Lexer<'a> {
             match ch {
                 '+' => Token::Plus,
                 '-' => Token::Minus,
-                '*' => Token::Asterisk,
-                '/' => Token::Slash,
+                '*' => Token::Multiply,
+                '/' => Token::Divide,
+                '%' => Token::Modulo,
                 '=' => {
                     if self.input.peek() == Some(&'=') {
                         self.input.next();
